@@ -7,12 +7,6 @@
 #define SIZE 1000
 #define PRINT 1
 
-// typedef struct Node
-// {
-//     int data;
-//     struct Node *next;
-// } Node;
-
 
 void generateData(int* buffer)
 {
@@ -140,7 +134,6 @@ int main(int argc, char** argv)
 {
     int K = atoi(argv[1]);
     int threads_num = K;
-    //printf("K= %d\n", K);
     int* buffer = (int*)calloc(SIZE, sizeof(int));
     double times[6] = { 0 };
     times[0] = omp_get_wtime();
@@ -150,9 +143,6 @@ int main(int argc, char** argv)
     int min = findMin(buffer);
     int range = max - min;
     int BUCKET_SIZE = range / K;
-    //printf("MAX = %d, MIN = %d, BUCKET_SIZE = %d\n", max, min, BUCKET_SIZE);
-    //printf("%d|%d|%d|%d|%d\n", buffer[SIZE-1], buffer[SIZE-2], buffer[SIZE-3],buffer[SIZE-4],buffer[SIZE-5]);
-    //main part
 
     Node** buckets = (Node**)calloc(K, sizeof(Node*));
     long* buckets_elems_counter = (long*)calloc(K, sizeof(long));
@@ -215,14 +205,14 @@ int main(int argc, char** argv)
     {
       printf("Elem = %d\n", buffer[i]);  
     }
-    // if(PRINT)
-    // {
-    //     printf("Data generation time = %.5f s\n", times[1]-times[0]);
-    //     printf("Buckets split time = %.5f s\n", times[3]-times[2]);
-    //     printf("Buckets sorting time = %.5f s\n", times[4]-times[3]);
-    //     printf("Sorted buffer filling time = %.5f s\n", times[5]-times[4]);
-    //     printf("Overall execution time = %.5f s\n", times[5]-times[0]);
-    // }
+    if(PRINT)
+    {
+        printf("Data generation time = %.7f s\n", times[1]-times[0]);
+        printf("Buckets split time = %.7f s\n", times[3]-times[2]);
+        printf("Buckets sorting time = %.7f s\n", times[4]-times[3]);
+        printf("Sorted buffer filling time = %.7f s\n", times[5]-times[4]);
+        printf("Overall execution time = %.7f s\n", times[5]-times[0]);
+    }
     
 
     free(buffer);
