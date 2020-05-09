@@ -276,12 +276,7 @@ int main(int argc, char** argv)
 
     }
 
-    
-    int i;
-    for(i=0;i<1000;++i)
-    {
-      printf("Elem = %d\n", buffer[i]);  
-    }
+
 
     if(PRINT)
     {
