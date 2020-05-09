@@ -4,8 +4,16 @@
 #include <time.h>
 #include "list_utils.h"
 
-#define SIZE 1000
+#define SIZE 10000000
 #define PRINT 1
+
+
+typedef struct thread_buck_info
+{
+  int  bucks_num;
+  int* buck_inds;
+  int* buck_el_count;
+} thread_buck_info;
 
 
 void generateData(int* buffer)
@@ -60,24 +68,46 @@ int findMin(int* buffer)
     return min_val;
 }
 
-int isElemInNthBucket(int elem, int nth_bucket, int BUCKET_SIZE, int min_elem, int K)
+int isElemServedInNthThread(int bucket, int nth_thread, int all_threads)
 {
-    int offset_elem = elem - min_elem;
-    int bucket = (offset_elem / BUCKET_SIZE);
-    return bucket == nth_bucket || (bucket == K && nth_bucket == (K-1));
+    return (bucket % all_threads) == nth_thread;
 }
 
+int getBucketIndexFromThreadBuckInfo(thread_buck_info thread_info, int _bucket)
+{
+    int size = thread_info.bucks_num;
+    int z;
+    for(z=0;z<size;++z)
+    {
+        if(thread_info.buck_inds[z] == _bucket)
+            return z;
+    }
 
-void splitToBuckets(int* buffer, Node** buckets, int thread_num, int priv_start_idx,
-                    int BUCKET_SIZE, int min, int K, int* buck_counter)
+    return size;
+}
+
+void splitToBuckets(int* buffer, Node** buckets, int thread_num, int all_threads, int priv_start_idx,
+                    int BUCKET_SIZE, int min_elem, int K, thread_buck_info* threads_buck_infos)
 {
     int i;
     for(i=priv_start_idx;i<SIZE;++i)
     {
-        if(isElemInNthBucket(buffer[i],thread_num,BUCKET_SIZE,min,K))
+        int offset_elem = buffer[i] - min_elem;
+        int bucket = (offset_elem / BUCKET_SIZE);
+        if(bucket == K) bucket = K - 1;
+        if(isElemServedInNthThread(bucket, thread_num, all_threads))
         {
-            push(&buckets[thread_num], buffer[i]);
-            (*buck_counter)++;
+            
+            push(&buckets[bucket], buffer[i]);
+            int curr_size = threads_buck_infos[thread_num].bucks_num;
+            int ind = getBucketIndexFromThreadBuckInfo(threads_buck_infos[thread_num], bucket); 
+            
+            if(curr_size == ind)
+            {
+                threads_buck_infos[thread_num].buck_inds[ind] = bucket;
+                threads_buck_infos[thread_num].bucks_num += 1;
+            }
+            threads_buck_infos[thread_num].buck_el_count[ind] += 1;
         }
     }
 
@@ -85,56 +115,103 @@ void splitToBuckets(int* buffer, Node** buckets, int thread_num, int priv_start_
     {
         for(i=priv_start_idx;i>=0;i--)
         {
-            if(isElemInNthBucket(buffer[i],thread_num,BUCKET_SIZE,min,K))
+            int offset_elem = buffer[i] - min_elem;
+            int bucket = (offset_elem / BUCKET_SIZE);
+            if(isElemServedInNthThread(bucket, thread_num, all_threads))
             {
-                push(&buckets[thread_num], buffer[i]);
-                (*buck_counter)++;
+                if(bucket == K) bucket = K - 1;
+                push(&buckets[bucket], buffer[i]);
+                int curr_size = threads_buck_infos[thread_num].bucks_num;
+                int ind = getBucketIndexFromThreadBuckInfo(threads_buck_infos[thread_num], bucket); 
+                
+                if(curr_size == ind)
+                {
+                    threads_buck_infos[thread_num].buck_inds[ind] = bucket;
+                    threads_buck_infos[thread_num].bucks_num += 1;
+                }
+                threads_buck_infos[thread_num].buck_el_count[ind] += 1;
             }
         }
     }
 }
 
-int countElemsInPrevBuckets(long* buckets_elems_counter, int thread_num)
+void sortValuesInBuckets(Node** buckets, thread_buck_info threads_bucks_info)
 {
-    int less_bucks_counter = 0;
-    if(thread_num == 0)
+    int size = threads_bucks_info.bucks_num;
+    int f = 0;
+    for(f=0;f<size;++f)
     {
-        less_bucks_counter = 0;
+        int ind = threads_bucks_info.buck_inds[f];
+        quickSort(&buckets[ind]); 
     }
-    else
+}
+
+void writeNumOfElemsFromBucks(long* buckets_elems_counter, thread_buck_info thread_buck_info)
+{
+    int r;
+    int size = thread_buck_info.bucks_num;
+    
+    for(r=0;r<size;++r)
     {
-        int i;
-        for(i=0;i<thread_num;++i)
-        {
-            less_bucks_counter += buckets_elems_counter[i];
-            //if(i==thread_num-1)
-                //printf("Bucket = %d, less_elems =  %ul\n", thread_num, less_bucks_counter);
-        }
+        int ind = thread_buck_info.buck_inds[r];
+        (buckets_elems_counter[ind]) = thread_buck_info.buck_el_count[r];
     }
-    return less_bucks_counter;
 }
 
 
-void fillBufferWithSortedValues(int* buffer, Node** buckets, int thread_num, int less_bucks_counter)
+void countElemsInPrevBuckets(long* buckets_elems_counter, int* less_bucks_counters, thread_buck_info thread_buck_info)
 {
-    if(buckets[thread_num]!=NULL)
+    int n = 0;
+    int size = thread_buck_info.bucks_num;
+    for(n=0;n<size;++n)
     {
-        Node* it = buckets[thread_num];
-        while(it!=NULL)
+        int less_counter = 0;
+        int x;
+        int buck = thread_buck_info.buck_inds[n];
+        for(x=0;x<buck;++x)
         {
-            buffer[less_bucks_counter] = it->data;
-            less_bucks_counter += 1;
-            it = it->next;
+           less_counter += buckets_elems_counter[x];  
         }
-        //printf("Thread = %d last index = %d\n", thread_num, less_bucks_counter-1);
+        less_bucks_counters[buck] = less_counter;
+    }
+}
+
+
+void fillBufferWithSortedValues(int* buffer, Node** buckets, int* less_bucks_counters, thread_buck_info thread_buck_info)
+{
+    int n = 0;
+    int size = thread_buck_info.bucks_num;
+    for(n=0;n<size;++n)
+    {
+        int buck = thread_buck_info.buck_inds[n];
+        if(buckets[buck]!=NULL)
+        {
+            Node* it = buckets[buck];
+            int b_el_ind = less_bucks_counters[buck]; 
+            while(it!=NULL)
+            {   
+                buffer[b_el_ind] = it->data;
+                b_el_ind += 1;
+                it = it->next;
+            }
+        }
     }
 }
 
 int main(int argc, char** argv)
 {
     int K = atoi(argv[1]);
-    int threads_num = K;
+    int threads_num = atoi(argv[2]);
+
     int* buffer = (int*)calloc(SIZE, sizeof(int));
+    const int MAX_BUCKS_PER_THREAD = (K>threads_num) ? K/threads_num + 1 : K;
+    thread_buck_info* threads_bucks_infos = (thread_buck_info*)calloc(threads_num, sizeof(thread_buck_info)); 
+    int j;
+    for(j=0;j<threads_num;++j)
+    {
+        threads_bucks_infos[j].buck_inds = (int*)calloc(MAX_BUCKS_PER_THREAD, sizeof(int));
+        threads_bucks_infos[j].buck_el_count = (int*)calloc(MAX_BUCKS_PER_THREAD, sizeof(int));
+    }
     double times[6] = { 0 };
     times[0] = omp_get_wtime();
     generateData(buffer);
@@ -146,14 +223,14 @@ int main(int argc, char** argv)
 
     Node** buckets = (Node**)calloc(K, sizeof(Node*));
     long* buckets_elems_counter = (long*)calloc(K, sizeof(long));
+    int* less_bucks_counters = (int*)calloc(K, sizeof(int));
 
     int thread_num;
     int start_idx = K;
 
-    #pragma omp parallel shared(buffer,buckets,buckets_elems_counter,BUCKET_SIZE,K,start_idx) \  
-            private(thread_num) num_threads(K) 
+    #pragma omp parallel shared(buffer,buckets,buckets_elems_counter,less_bucks_counters,threads_bucks_infos,BUCKET_SIZE,K,start_idx) \  
+            private(thread_num) num_threads(threads_num) 
     {
-        int buck_counter = 0;
         thread_num = omp_get_thread_num();
         int priv_start_idx;
 
@@ -169,7 +246,7 @@ int main(int argc, char** argv)
             times[2] = omp_get_wtime();
         }
         
-        splitToBuckets(buffer, buckets, thread_num, priv_start_idx, BUCKET_SIZE, min, K, &buck_counter);
+        splitToBuckets(buffer, buckets, thread_num, threads_num, priv_start_idx, BUCKET_SIZE, min, K, threads_bucks_infos);
 
         #pragma omp barrier
         #pragma omp single
@@ -177,9 +254,7 @@ int main(int argc, char** argv)
             times[3] = omp_get_wtime();
         }
         
-        buckets_elems_counter[thread_num] = buck_counter;
-        
-        quickSort(&buckets[thread_num]); 
+        sortValuesInBuckets(buckets, threads_bucks_infos[thread_num]);
 
         #pragma omp barrier
         #pragma omp single
@@ -187,9 +262,11 @@ int main(int argc, char** argv)
             times[4] = omp_get_wtime();
         }
 
-        int less_bucks_counter = countElemsInPrevBuckets(buckets_elems_counter, thread_num);
-    
-        fillBufferWithSortedValues(buffer, buckets, thread_num, less_bucks_counter);
+        writeNumOfElemsFromBucks(buckets_elems_counter, threads_bucks_infos[thread_num]);
+        #pragma omp barrier
+        countElemsInPrevBuckets(buckets_elems_counter, less_bucks_counters, threads_bucks_infos[thread_num]);
+        #pragma omp barrier
+        fillBufferWithSortedValues(buffer, buckets, less_bucks_counters, threads_bucks_infos[thread_num]);
 
         #pragma omp barrier
         #pragma omp single
@@ -201,10 +278,11 @@ int main(int argc, char** argv)
 
     
     int i;
-    for(i=0;i<SIZE;++i)
+    for(i=0;i<1000;++i)
     {
       printf("Elem = %d\n", buffer[i]);  
     }
+
     if(PRINT)
     {
         printf("Data generation time = %.7f s\n", times[1]-times[0]);
@@ -218,5 +296,7 @@ int main(int argc, char** argv)
     free(buffer);
     free(buckets);
     free(buckets_elems_counter);
+    free(less_bucks_counters);
+    free(threads_bucks_infos);
     return 0;
 }
