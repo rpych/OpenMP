@@ -16,10 +16,10 @@ typedef struct thread_buck_info
 } thread_buck_info;
 
 
-void generateData(int* buffer)
+void generateData(int* buffer, int threads_num)
 {
     int i;
-    #pragma omp parallel 
+    #pragma omp parallel num_threads(threads_num)
     {
     unsigned int seed = ((unsigned int) omp_get_wtime()) + omp_get_thread_num();
     #pragma omp for private(i)
@@ -214,7 +214,7 @@ int main(int argc, char** argv)
     }
     double times[6] = { 0 };
     times[0] = omp_get_wtime();
-    generateData(buffer);
+    generateData(buffer, threads_num);
     times[1] = omp_get_wtime();
     int max = findMax(buffer);
     int min = findMin(buffer);
